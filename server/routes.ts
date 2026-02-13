@@ -30,6 +30,25 @@ function requireAuth(req: Request, res: Response, next: Function) {
   next();
 }
 
+function csrfProtection(req: Request, res: Response, next: Function) {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    return next();
+  }
+  const origin = req.get("origin");
+  const host = req.get("host");
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost !== host) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+    } catch {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+  }
+  next();
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -37,12 +56,23 @@ export async function registerRoutes(
   app.use(
     session({
       store: new PgStore({ conString: process.env.DATABASE_URL, createTableIfMissing: true }),
-      secret: process.env.SESSION_SECRET || "hub-secret-key-change-in-prod",
+      secret: (() => {
+        const secret = process.env.SESSION_SECRET;
+        if (!secret) {
+          if (process.env.NODE_ENV === "production") {
+            throw new Error("SESSION_SECRET environment variable is required in production");
+          }
+          return "hub-dev-only-secret-not-for-production";
+        }
+        return secret;
+      })(),
       resave: false,
       saveUninitialized: false,
       cookie: { secure: process.env.NODE_ENV === 'production', sameSite: 'lax', httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000 },
     })
   );
+
+  app.use("/api", csrfProtection);
 
   app.post("/api/auth/signup", authLimiter, async (req, res) => {
     try {
@@ -298,9 +328,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/workspaces/:id/apps", requireAuth, async (req, res) => {
-    const workspaces = await storage.getClientWorkspaces(req.session.userId!);
-    if (!workspaces.some(w => w.id === req.params.id)) return res.status(404).json({ message: "Workspace not found" });
-    const apps = await storage.getWorkspaceApps(req.params.id);
+    const apps = await storage.getWorkspaceApps(req.params.id, req.session.userId!);
     res.json(apps);
   });
 
@@ -308,9 +336,6 @@ export async function registerRoutes(
     try {
       const { appIds, catalogApps } = req.body;
       if (!Array.isArray(appIds)) return res.status(400).json({ message: "appIds must be an array" });
-      const workspaces = await storage.getClientWorkspaces(req.session.userId!);
-      if (!workspaces.some(w => w.id === req.params.id)) return res.status(404).json({ message: "Workspace not found" });
-
       const userApps = await storage.getConnectedApps(req.session.userId!);
       const userAppsByName = new Map(userApps.map(a => [a.name.toLowerCase(), a]));
       const userAppIds = new Set(userApps.map(a => a.id));
@@ -345,7 +370,7 @@ export async function registerRoutes(
         }
       }
 
-      const result = await storage.setWorkspaceApps(req.params.id, Array.from(finalAppIds));
+      const result = await storage.setWorkspaceApps(req.params.id, req.session.userId!, Array.from(finalAppIds));
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

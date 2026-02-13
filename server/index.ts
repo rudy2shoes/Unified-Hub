@@ -66,20 +66,6 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
-  try {
-    const existingAdmin = await storage.getUserByEmail("admin@hub.com");
-    if (!existingAdmin) {
-      await storage.createUser({
-        email: "admin@hub.com",
-        password: "admin123",
-        firstName: "Admin",
-        lastName: "User",
-      });
-      log("Admin account created", "seed");
-    }
-  } catch (err: any) {
-    log(`Admin seed skipped: ${err.message}`, "seed");
-  }
 
   try {
     const stripeSync = await getStripeSync();

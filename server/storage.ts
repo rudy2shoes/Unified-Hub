@@ -43,8 +43,8 @@ export interface IStorage {
   createClientWorkspace(workspace: InsertClientWorkspace): Promise<ClientWorkspace>;
   updateClientWorkspace(id: string, userId: string, data: Partial<InsertClientWorkspace>): Promise<ClientWorkspace | undefined>;
   deleteClientWorkspace(id: string, userId: string): Promise<void>;
-  getWorkspaceApps(workspaceId: string): Promise<ClientWorkspaceApp[]>;
-  setWorkspaceApps(workspaceId: string, appIds: string[]): Promise<ClientWorkspaceApp[]>;
+  getWorkspaceApps(workspaceId: string, userId: string): Promise<ClientWorkspaceApp[]>;
+  setWorkspaceApps(workspaceId: string, userId: string, appIds: string[]): Promise<ClientWorkspaceApp[]>;
 
   getProduct(productId: string): Promise<any>;
   getSubscription(subscriptionId: string): Promise<any>;
@@ -149,11 +149,15 @@ class DatabaseStorage implements IStorage {
     await db.delete(clientWorkspaces).where(and(eq(clientWorkspaces.id, id), eq(clientWorkspaces.userId, userId)));
   }
 
-  async getWorkspaceApps(workspaceId: string): Promise<ClientWorkspaceApp[]> {
+  async getWorkspaceApps(workspaceId: string, userId: string): Promise<ClientWorkspaceApp[]> {
+    const [workspace] = await db.select().from(clientWorkspaces).where(and(eq(clientWorkspaces.id, workspaceId), eq(clientWorkspaces.userId, userId)));
+    if (!workspace) return [];
     return db.select().from(clientWorkspaceApps).where(eq(clientWorkspaceApps.workspaceId, workspaceId));
   }
 
-  async setWorkspaceApps(workspaceId: string, appIds: string[]): Promise<ClientWorkspaceApp[]> {
+  async setWorkspaceApps(workspaceId: string, userId: string, appIds: string[]): Promise<ClientWorkspaceApp[]> {
+    const [workspace] = await db.select().from(clientWorkspaces).where(and(eq(clientWorkspaces.id, workspaceId), eq(clientWorkspaces.userId, userId)));
+    if (!workspace) return [];
     await db.delete(clientWorkspaceApps).where(eq(clientWorkspaceApps.workspaceId, workspaceId));
     if (appIds.length === 0) return [];
     const values = appIds.map(appId => ({ workspaceId, appId }));
